@@ -143,41 +143,13 @@ function pt_init_gateway_class()
         'currency_converter_rate' => array(
           'title'       => 'Currency Converter Rate',
           'type'        => 'number',
-          'description' => 'Set currency converter rate relative to €.',
+          'description' => 'Set currency converter rate relative to €: e.g. 0.924.',
+          'custom_attributes' => array(
+            'min'  => 0,
+            'step' => 'any'
+          )
         ),
       );
-    }
-
-    public function get_payment_systems()
-    {
-
-      $response = wp_remote_get($this->endpoint . 'payment-systems');
-
-      $body = json_decode(wp_remote_retrieve_body($response), true);
-
-      if ($body['data'] && $body['data']['payment_systems']) {
-        $is_hidden = count($body['data']['payment_systems']) === 1 ? 'display: none;' : '';
-        echo '<label style="margin: 0; ' . $is_hidden . '">Payment system</label>';
-        echo '<ul class="pt_payment-systems-list form-row" style="list-style: none; padding: 0; margin: 0; ' . $is_hidden . '">';
-        foreach ($body['data']['payment_systems'] as $key => $payment_system) {
-          $is_checked = $key === 0 ? 'checked' : '';
-          echo '<li>
-                  <label for="pt_payment_system_' . $payment_system['id_payment_system'] . '">
-                    <input 
-                      type="radio" 
-                      name="pt_payment_system" id="pt_payment_system_' . $payment_system['id_payment_system'] . '"
-                      value="' . $payment_system['id_payment_system'] . '"
-                      ' . $is_checked . '
-                    />
-                    ' . $payment_system['name'] . '
-                  </label>
-                </li>';
-        }
-        echo '</ul>';
-      } else {
-        wc_add_notice('Please try again. ' . $body['error']['message'], 'error');
-        return;
-      }		
     }
 
     /**
@@ -192,14 +164,9 @@ function pt_init_gateway_class()
       }
       // Add this action hook if you want your custom payment gateway to support it
       do_action('woocommerce_credit_card_form_start', $this->id);
-
-      //$this->get_payment_systems();
+      
       echo '<input type="hidden" name="pt_payment_system" value="" />';
       echo '<input type="hidden" name="pt_period" value="1" />';
-      /* echo '<div class="form-row" style="padding: 0; margin: 0; display: none;">
-              <label style="margin: 0;">Period (in months)</label>
-              <input id="pt_period" name="pt_period" class="input-text" type="number" autocomplete="off" value="1" min="1" style="border: none; max-width: 200px;">
-            </div>'; */
 
       do_action('woocommerce_credit_card_form_end', $this->id);
     }
@@ -325,12 +292,18 @@ function pt_init_gateway_class()
 
       $this->get_customer_by_email($order->get_billing_email());
 
+      $price = $order->get_total();
+
+      if ($this->currency_converter && $this->currency_converter_rate) {
+        $price = $order->get_total() * (float)$this->currency_converter_rate;
+      }
+
       /*
       * Array with parameters for API interaction
       */
       $args = array(
         'id_client' => $this->client_id,
-        'price' => $order->get_total(),
+        'price' => $price,
         'period' => $_POST['pt_period'],
         'id_payment_system' => $_POST['pt_payment_system'],
         'description' => $order->get_id()
@@ -347,14 +320,10 @@ function pt_init_gateway_class()
         'body' => $args
       ]);
 
-      $body = json_decode(wp_remote_retrieve_body($response), true);
-
-      //if( 201 === wp_remote_retrieve_response_code( $response ) ) {
+      $body = json_decode(wp_remote_retrieve_body($response), true);      
 
       // it could be different depending on your payment processor
       if ($body['data']) {
-
-
 
         $uuid = $body['data']['uuid_payment'];
 
@@ -373,7 +342,6 @@ function pt_init_gateway_class()
         wc_add_notice('Please try again. ' . $body['error']['message'], 'error');
         return;
       }
-      //}
     }
 
     /*
